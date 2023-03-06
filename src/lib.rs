@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use nom::{
-    bytes::complete::{is_not, tag},
-    character::complete::char,
+    bytes::complete::{escaped, is_not, tag},
+    character::complete::{char, none_of, one_of},
     combinator::opt,
     multi::{separated_list0, separated_list1},
     sequence::{delimited, terminated, tuple},
@@ -31,7 +31,11 @@ pub struct Derivation<'a> {
 }
 
 fn parse_string(input: &str) -> IResult<&str, Option<&str>> {
-    delimited(char('"'), opt(is_not("\"")), char('"'))(input)
+    delimited(
+        char('"'),
+        opt(escaped(none_of("\"\\"), '\\', one_of("\"\\n"))),
+        char('"'),
+    )(input)
 }
 fn parse_required_string(input: &str) -> IResult<&str, &str> {
     delimited(char('"'), is_not("\""), char('"'))(input)
@@ -153,6 +157,20 @@ pub fn parse_drv(input: &str) -> IResult<&str, Derivation> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn it_can_parse_an_unescaped_string() {
+        let (remaining_input, contents) = parse_string("\"abc\"").unwrap();
+        assert_eq!(remaining_input, "");
+        assert_eq!(contents, Some("abc"));
+    }
+
+    #[test]
+    fn it_can_parse_an_escaped_string() {
+        let (remaining_input, contents) = parse_string(r#""ab\\c\"""#).unwrap();
+        assert_eq!(remaining_input, "");
+        assert_eq!(contents, Some(r#"ab\\c\""#));
+    }
 
     #[test]
     fn it_can_parse_an_output_block() {
