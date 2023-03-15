@@ -20,6 +20,13 @@ pub struct Builder<'a> {
     pub path: &'a Path,
     pub arguments: Vec<&'a str>,
 }
+
+#[derive(Debug)]
+pub struct InputDrv<'a> {
+    pub derivation: &'a Path,
+    pub outputs: Vec<&'a str>,
+}
+
 #[derive(Debug)]
 pub struct Derivation<'a> {
     pub platform: &'a str,
@@ -59,11 +66,6 @@ fn parse_output(input: &str) -> IResult<&str, Output> {
     Ok((input, Output { name, path }))
 }
 
-#[derive(Debug)]
-pub struct InputDrv<'a> {
-    pub derivation: &'a Path,
-    pub outputs: Vec<&'a str>,
-}
 fn parse_input_drv(input: &str) -> IResult<&str, InputDrv> {
     let (input, (derivation, outputs)) = delimited(
         char('('),
@@ -85,6 +87,7 @@ fn parse_input_drv(input: &str) -> IResult<&str, InputDrv> {
         },
     ))
 }
+
 pub fn parse_drv(input: &str) -> IResult<&str, Derivation> {
     let (input, _) = tag("Derive(")(input)?;
     let (input, outputs) = terminated(
