@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 
 use nom::{
     bytes::complete::{escaped, is_not, tag},
     character::complete::{char, none_of, one_of},
-    combinator::opt,
+    combinator::{map, opt},
     multi::{separated_list0, separated_list1},
     sequence::{delimited, terminated, tuple},
     IResult,
@@ -12,12 +12,12 @@ use nom::{
 #[derive(Debug)]
 pub struct Output<'a> {
     pub name: &'a str,
-    pub path: &'a str,
+    pub path: &'a Path,
 }
 
 #[derive(Debug)]
 pub struct Builder<'a> {
-    pub path: &'a str,
+    pub path: &'a Path,
     pub arguments: Vec<&'a str>,
 }
 #[derive(Debug)]
@@ -41,12 +41,16 @@ fn parse_required_string(input: &str) -> IResult<&str, &str> {
     delimited(char('"'), is_not("\""), char('"'))(input)
 }
 
+fn parse_path(input: &str) -> IResult<&str, &Path> {
+    map(parse_required_string, Path::new)(input)
+}
+
 fn parse_output(input: &str) -> IResult<&str, Output> {
     let (input, (name, path, _, _)) = delimited(
         char('('),
         tuple((
             terminated(parse_required_string, char(',')),
-            terminated(parse_required_string, char(',')),
+            terminated(parse_path, char(',')),
             terminated(parse_string, char(',')),
             parse_string,
         )),
@@ -57,14 +61,14 @@ fn parse_output(input: &str) -> IResult<&str, Output> {
 
 #[derive(Debug)]
 pub struct InputDrv<'a> {
-    pub derivation: &'a str,
+    pub derivation: &'a Path,
     pub outputs: Vec<&'a str>,
 }
 fn parse_input_drv(input: &str) -> IResult<&str, InputDrv> {
     let (input, (derivation, outputs)) = delimited(
         char('('),
         tuple((
-            terminated(parse_required_string, char(',')),
+            terminated(parse_path, char(',')),
             delimited(
                 char('['),
                 separated_list1(char(','), parse_required_string),
@@ -106,7 +110,7 @@ pub fn parse_drv(input: &str) -> IResult<&str, Derivation> {
     )(input)?;
     let (input, _) = char(',')(input)?;
     let (input, platform) = terminated(parse_required_string, char(','))(input)?;
-    let (input, builder_path) = terminated(parse_required_string, char(','))(input)?;
+    let (input, builder_path) = terminated(parse_path, char(','))(input)?;
     let (input, builder_arguments) = terminated(
         delimited(
             char('['),
@@ -177,7 +181,7 @@ mod tests {
         assert_eq!(output.name, "dev");
         assert_eq!(
             output.path,
-            "/nix/store/8zhl01sb1gjxlfmvxxacpiafzvah1p9l-brotli-1.0.9-dev",
+            Path::new("/nix/store/8zhl01sb1gjxlfmvxxacpiafzvah1p9l-brotli-1.0.9-dev"),
         )
     }
 
