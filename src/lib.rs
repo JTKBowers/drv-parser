@@ -33,7 +33,7 @@ pub struct Derivation<'a> {
 fn parse_string(input: &str) -> IResult<&str, Option<&str>> {
     delimited(
         char('"'),
-        opt(escaped(none_of("\"\\"), '\\', one_of("\"\\n"))),
+        opt(escaped(none_of("\"\\"), '\\', one_of("\"\\nt"))),
         char('"'),
     )(input)
 }
