@@ -12,12 +12,12 @@ use nom::{
 #[derive(Debug)]
 pub struct Output<'a> {
     pub name: &'a str,
-    pub derivation: &'a str,
+    pub path: &'a str,
 }
 
 #[derive(Debug)]
 pub struct Builder<'a> {
-    pub derivation: &'a str,
+    pub path: &'a str,
     pub arguments: Vec<&'a str>,
 }
 #[derive(Debug)]
@@ -25,9 +25,9 @@ pub struct Derivation<'a> {
     pub platform: &'a str,
     pub outputs: Vec<Output<'a>>,
     pub builder: Builder<'a>,
-    pub attributes: HashMap<&'a str, Option<&'a str>>,
-    pub dependencies: Vec<Dependency<'a>>,
-    pub build_dependencies: Vec<&'a str>,
+    pub env: HashMap<&'a str, Option<&'a str>>,
+    pub input_drvs: Vec<InputDrv<'a>>,
+    pub input_srcs: Vec<&'a str>,
 }
 
 fn parse_string(input: &str) -> IResult<&str, Option<&str>> {
@@ -42,7 +42,7 @@ fn parse_required_string(input: &str) -> IResult<&str, &str> {
 }
 
 fn parse_output(input: &str) -> IResult<&str, Output> {
-    let (input, (output_name, derivation, _, _)) = delimited(
+    let (input, (name, path, _, _)) = delimited(
         char('('),
         tuple((
             terminated(parse_required_string, char(',')),
@@ -52,21 +52,15 @@ fn parse_output(input: &str) -> IResult<&str, Output> {
         )),
         char(')'),
     )(input)?;
-    Ok((
-        input,
-        Output {
-            name: output_name,
-            derivation,
-        },
-    ))
+    Ok((input, Output { name, path }))
 }
 
 #[derive(Debug)]
-pub struct Dependency<'a> {
+pub struct InputDrv<'a> {
     pub derivation: &'a str,
     pub outputs: Vec<&'a str>,
 }
-fn parse_dependency(input: &str) -> IResult<&str, Dependency> {
+fn parse_input_drv(input: &str) -> IResult<&str, InputDrv> {
     let (input, (derivation, outputs)) = delimited(
         char('('),
         tuple((
@@ -81,7 +75,7 @@ fn parse_dependency(input: &str) -> IResult<&str, Dependency> {
     )(input)?;
     Ok((
         input,
-        Dependency {
+        InputDrv {
             derivation,
             outputs,
         },
@@ -97,22 +91,22 @@ pub fn parse_drv(input: &str) -> IResult<&str, Derivation> {
         ),
         char(','),
     )(input)?;
-    let (input, dependencies) = terminated(
+    let (input, input_drvs) = terminated(
         delimited(
             char('['),
-            separated_list0(char(','), parse_dependency),
+            separated_list0(char(','), parse_input_drv),
             char(']'),
         ),
         char(','),
     )(input)?;
-    let (input, build_dependencies) = delimited(
+    let (input, input_srcs) = delimited(
         char('['),
         separated_list0(char(','), parse_required_string),
         char(']'),
     )(input)?;
     let (input, _) = char(',')(input)?;
     let (input, platform) = terminated(parse_required_string, char(','))(input)?;
-    let (input, builder_derivation) = terminated(parse_required_string, char(','))(input)?;
+    let (input, builder_path) = terminated(parse_required_string, char(','))(input)?;
     let (input, builder_arguments) = terminated(
         delimited(
             char('['),
@@ -122,7 +116,7 @@ pub fn parse_drv(input: &str) -> IResult<&str, Derivation> {
         char(','),
     )(input)?;
     let builder = Builder {
-        derivation: builder_derivation,
+        path: builder_path,
         arguments: builder_arguments,
     };
     let (input, drv_attributes) = delimited(
@@ -137,7 +131,7 @@ pub fn parse_drv(input: &str) -> IResult<&str, Derivation> {
         ),
         char(']'),
     )(input)?;
-    let attributes = drv_attributes
+    let env = drv_attributes
         .into_iter()
         .collect::<HashMap<&str, Option<&str>>>();
     let (input, _) = tag(")")(input)?;
@@ -147,9 +141,9 @@ pub fn parse_drv(input: &str) -> IResult<&str, Derivation> {
             platform,
             outputs,
             builder,
-            attributes,
-            dependencies,
-            build_dependencies,
+            env,
+            input_drvs,
+            input_srcs,
         },
     ))
 }
@@ -175,14 +169,14 @@ mod tests {
 
     #[test]
     fn it_can_parse_an_output_block() {
-        let (remaining_input, block) = parse_output(
+        let (remaining_input, output) = parse_output(
             "(\"dev\",\"/nix/store/8zhl01sb1gjxlfmvxxacpiafzvah1p9l-brotli-1.0.9-dev\",\"\",\"\")",
         )
         .unwrap();
         assert_eq!(remaining_input, "");
-        assert_eq!(block.name, "dev");
+        assert_eq!(output.name, "dev");
         assert_eq!(
-            block.derivation,
+            output.path,
             "/nix/store/8zhl01sb1gjxlfmvxxacpiafzvah1p9l-brotli-1.0.9-dev",
         )
     }
