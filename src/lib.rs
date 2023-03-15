@@ -4,7 +4,8 @@ use nom::{
     bytes::complete::{escaped, is_not, tag},
     character::complete::{char, none_of, one_of},
     combinator::{map, opt},
-    multi::{separated_list0, separated_list1},
+    error::ParseError,
+    multi::separated_list0,
     sequence::{delimited, terminated, tuple},
     IResult,
 };
@@ -52,6 +53,15 @@ fn parse_path(input: &str) -> IResult<&str, &Path> {
     map(parse_required_string, Path::new)(input)
 }
 
+fn parse_array<'a, O, E: ParseError<&'a str>, F>(
+    f: F,
+) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<O>, E>
+where
+    F: FnMut(&'a str) -> IResult<&'a str, O, E> + 'a,
+{
+    delimited(char('['), separated_list0(char(','), f), char(']'))
+}
+
 fn parse_output(input: &str) -> IResult<&str, Output> {
     let (input, (name, path, _, _)) = delimited(
         char('('),
@@ -71,11 +81,7 @@ fn parse_input_drv(input: &str) -> IResult<&str, InputDrv> {
         char('('),
         tuple((
             terminated(parse_path, char(',')),
-            delimited(
-                char('['),
-                separated_list1(char(','), parse_required_string),
-                char(']'),
-            ),
+            parse_array(parse_required_string),
         )),
         char(')'),
     )(input)?;
@@ -90,54 +96,22 @@ fn parse_input_drv(input: &str) -> IResult<&str, InputDrv> {
 
 pub fn parse_drv(input: &str) -> IResult<&str, Derivation> {
     let (input, _) = tag("Derive(")(input)?;
-    let (input, outputs) = terminated(
-        delimited(
-            char('['),
-            separated_list0(char(','), parse_output),
-            char(']'),
-        ),
-        char(','),
-    )(input)?;
-    let (input, input_drvs) = terminated(
-        delimited(
-            char('['),
-            separated_list0(char(','), parse_input_drv),
-            char(']'),
-        ),
-        char(','),
-    )(input)?;
-    let (input, input_srcs) = delimited(
-        char('['),
-        separated_list0(char(','), parse_required_string),
-        char(']'),
-    )(input)?;
-    let (input, _) = char(',')(input)?;
+    let (input, outputs) = terminated(parse_array(parse_output), char(','))(input)?;
+    let (input, input_drvs) = terminated(parse_array(parse_input_drv), char(','))(input)?;
+    let (input, input_srcs) = terminated(parse_array(parse_required_string), char(','))(input)?;
     let (input, platform) = terminated(parse_required_string, char(','))(input)?;
     let (input, builder_path) = terminated(parse_path, char(','))(input)?;
-    let (input, builder_arguments) = terminated(
-        delimited(
-            char('['),
-            separated_list0(char(','), parse_required_string),
-            char(']'),
-        ),
-        char(','),
-    )(input)?;
+    let (input, builder_arguments) =
+        terminated(parse_array(parse_required_string), char(','))(input)?;
     let builder = Builder {
         path: builder_path,
         arguments: builder_arguments,
     };
-    let (input, drv_attributes) = delimited(
-        char('['),
-        separated_list0(
-            char(','),
-            delimited(
-                char('('),
-                tuple((terminated(parse_required_string, char(',')), parse_string)),
-                char(')'),
-            ),
-        ),
-        char(']'),
-    )(input)?;
+    let (input, drv_attributes) = parse_array(delimited(
+        char('('),
+        tuple((terminated(parse_required_string, char(',')), parse_string)),
+        char(')'),
+    ))(input)?;
     let env = drv_attributes
         .into_iter()
         .collect::<HashMap<&str, Option<&str>>>();
